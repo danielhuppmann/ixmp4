@@ -1,3 +1,4 @@
+import math
 from typing import TYPE_CHECKING, TypeVar
 
 import numpy as np
@@ -15,6 +16,8 @@ from ixmp4.data.iamc.datapoint.type import Type
 
 from ..base import BaseBackendFacade
 from .variable import VariableServiceFacade
+
+SQL_PARAMETER_MAX = 999
 
 if TYPE_CHECKING:
     from ixmp4.core import run
@@ -184,6 +187,25 @@ class RunIamcData(BaseBackendFacade, IamcDataFacade):
             df = self._split_time_col(df)
         df = self._rename_arg_cols(df)
         df["run__id"] = self._run.id
+
+        if len(df) > SQL_PARAMETER_MAX:
+            df_grouped = df.set_index(["region", "variable", "unit"])
+            df_index = len(df_grouped.index.unique())
+            if len(df_index) > SQL_PARAMETER_MAX:
+                for i in range(math.ceil(len(df_index) / SQL_PARAMETER_MAX)):
+                    self.add(
+                        df_grouped.loc[
+                            df_index[
+                                SQL_PARAMETER_MAX * i : SQL_PARAMETER_MAX * (i + 1)
+                            ]
+                        ]
+                    )
+                return
+
+        self._add_by_chunk(df)
+
+    def _add_by_chunk(self, df: pd.DataFrame) -> None:
+
         df = self._get_or_create_ts(df)
 
         if type is not None:
